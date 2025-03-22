@@ -2,7 +2,6 @@ import multiprocessing as mp
 import os
 from itertools import islice
 import math
-
 def process_chunk(chunk):
     # Process a chunk of lines and return city statistics
     city_stats = {}
