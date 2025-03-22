@@ -2,45 +2,57 @@ import multiprocessing as mp
 import os
 from itertools import islice
 import math
+
 def process_chunk(chunk):
-    # Process a chunk of lines and return city statistics
+    """Process a chunk of lines and return city statistics."""
     city_stats = {}
-    
     for line in chunk:
         if not line.strip():
             continue
-        
         try:
-            parts = line.strip().split(';')
-            if len(parts) != 2:
-                continue
-                
-            city, temp_str = parts
+            city, temp_str = line.strip().split(';')
             temp = float(temp_str)
-            
             if city not in city_stats:
-                # Initialize: [min, sum, count, max]
-                city_stats[city] = [temp, temp, 1, temp]
+                city_stats[city] = [temp, temp, temp, 1]  # [min, max, sum, count]
             else:
                 stats = city_stats[city]
                 stats[0] = min(stats[0], temp)  # min
-                stats[1] += temp  # sum
-                stats[2] += 1  # count
-                stats[3] = max(stats[3], temp)  # max
+                stats[1] = max(stats[1], temp)  # max
+                stats[2] += temp  # sum
+                stats[3] += 1  # count
         except (ValueError, IndexError):
-            # Skip invalid lines
-            continue
-    
+            continue  # Skip invalid lines
     return city_stats
 
+def merge_stats(global_stats, local_stats):
+    """Merge local stats into global stats."""
+    for city, stats in local_stats.items():
+        if city not in global_stats:
+            global_stats[city] = stats
+        else:
+            global_stats[city][0] = min(global_stats[city][0], stats[0])  # min
+            global_stats[city][1] = max(global_stats[city][1], stats[1])  # max
+            global_stats[city][2] += stats[2]  # sum
+            global_stats[city][3] += stats[3]  # count
+
 def chunk_reader(file_path, chunk_size):
-    """Generator to read file in chunks"""
+    """Generator to read file in chunks."""
     with open(file_path, 'r') as f:
         while True:
             lines = list(islice(f, chunk_size))
             if not lines:
                 break
             yield lines
+
+def write_results(output_file, city_stats):
+    """Write the final results to the output file."""
+    with open(output_file, 'w') as f:
+        for city in sorted(city_stats.keys()):
+            stats = city_stats[city]
+            min_temp = math.ceil(stats[0] * 10) / 10
+            mean_temp = math.ceil((stats[2] / stats[3]) * 10) / 10
+            max_temp = math.ceil(stats[1] * 10) / 10
+            f.write(f"{city}={min_temp:.1f}/{mean_temp:.1f}/{max_temp:.1f}\n")
 
 def main():
     input_file = 'testcase.txt'
@@ -53,45 +65,21 @@ def main():
     file_size = os.path.getsize(input_file)
     chunk_size = max(100_000, min(1_000_000, file_size // (num_processes * 4)))
     
-    # Create pool of workers
+    # Create a pool of workers
     with mp.Pool(processes=num_processes) as pool:
-        # Submit tasks for each chunk
+        # Process chunks in parallel
         results = []
         for chunk in chunk_reader(input_file, chunk_size):
-            result = pool.apply_async(process_chunk, (chunk,))
-            results.append(result)
+            results.append(pool.apply_async(process_chunk, (chunk,)))
         
-        # Get results and merge
-        merged_stats = {}
+        # Merge results incrementally
+        global_stats = {}
         for result in results:
-            chunk_stats = result.get()
-            for city, stats in chunk_stats.items():
-                if city not in merged_stats:
-                    merged_stats[city] = stats.copy()
-                else:
-                    merged_stats[city][0] = min(merged_stats[city][0], stats[0])  # min
-                    merged_stats[city][1] += stats[1]  # sum
-                    merged_stats[city][2] += stats[2]  # count
-                    merged_stats[city][3] = max(merged_stats[city][3], stats[3])  # max
+            local_stats = result.get()
+            merge_stats(global_stats, local_stats)
     
-    # Format and write output with correct IEEE 754 rounding (ceiling to one decimal place)
-    formatted_results = []
-    for city, (min_temp, sum_temp, count, max_temp) in merged_stats.items():
-        # Use ceil rounding for all values as per IEEE 754 "round to infinity" standard
-        min_rounded = math.ceil(min_temp * 10) / 10
-        mean_temp = sum_temp / count
-        mean_rounded = math.ceil(mean_temp * 10) / 10
-        max_rounded = math.ceil(max_temp * 10) / 10
-        
-        # Format with exactly one decimal place
-        formatted_results.append(f"{city}={min_rounded:.1f}/{mean_rounded:.1f}/{max_rounded:.1f}")
-    
-    # Sort alphabetically
-    formatted_results.sort()
-    
-    # Write results
-    with open(output_file, 'w') as f:
-        f.write('\n'.join(formatted_results))
+    # Write the final results to the output file
+    write_results(output_file, global_stats)
 
 if __name__ == "__main__":
     main()
