@@ -1,129 +1,115 @@
-# import math
-
-# def main(input_file_name="testcase.txt", output_file_name="output.txt"):
-#     input_file = open(input_file_name, "r")
-#     output_file = open(output_file_name, "w")
-
-#     minmap = {}
-#     maxmap = {}
-#     meanmap = {}
-
-#     for line in input_file:
-#         li = line.strip().split(';')
-#         key, value = li[0], float(li[1])
-#         if key in minmap:
-#             minmap[key] = min(minmap[key], value)
-#         else:
-#             minmap[key] = value
-#         if key in maxmap:
-#             maxmap[key] = max(maxmap[key], value)
-#         else:
-#             maxmap[key] = value
-#         if key in meanmap:
-#             meanmap[key][0] += value
-#             meanmap[key][1] += 1
-#         else:
-#             meanmap[key] = [value, 1]
-
-#     for key in sorted(minmap.keys()):
-#         minX = math.ceil(minmap[key] * 10) / 10
-#         meanX = math.ceil((meanmap[key][0]/meanmap[key][1]) * 10) / 10
-#         maxX = math.ceil(maxmap[key] * 10) / 10
-#         output_file.write(f"{key}={minX}/{meanX}/{maxX}\n")
-
-#     output_file.close()
-#     input_file.close()
-
-
-# if __name__ == "__main__":
-#     main()
-
-
-
-
-# import math
-
-# def main(input_file_name="testcase.txt", output_file_name="output.txt"):
-    
-#     values = {}
-
-#     with open(input_file_name, "r") as input_file:
-#         for line in input_file:
-#             key, value = line.strip().split(';')
-#             value = float(value)
-
-#             if key not in values:
-#                 values[key] = [value, value, value, 1]
-#             else:
-#                 values[key][0] = min(values[key][0], value)
-#                 values[key][1] = max(values[key][1], value)
-#                 values[key][2] += value
-#                 values[key][3] += 1
-
-#     with open(output_file_name, "w") as output_file:
-#         for key in sorted(values.keys()):
-#             minX = math.ceil(values[key][0] * 10) / 10
-#             meanX = math.ceil((values[key][2] / values[key][3]) * 10) / 10
-#             maxX = math.ceil(values[key][1] * 10) / 10
-#             output_file.write(f"{key}={minX}/{meanX}/{maxX}\n")
-
-# if __name__ == "__main__":
-#     main()
-
-
-
-
-
-# import math
-# from collections import defaultdict
-
-# def main(input_file_name="testcase.txt", output_file_name="output.txt"):
-#     values = defaultdict(lambda: [float('inf'), float('-inf'), 0, 0])
-
-#     with open(input_file_name, "r") as input_file:
-#         for line in input_file:
-#             key, value = line.strip().split(';')
-#             value = float(value)
-
-#             values[key][0] = min(values[key][0], value) 
-#             values[key][1] = max(values[key][1], value) 
-#             values[key][2] += value                     
-#             values[key][3] += 1                         
-
-#     with open(output_file_name, "w") as output_file:
-#         for key in sorted(values.keys()):
-#             minX = math.ceil(values[key][0] * 10) / 10
-#             meanX = math.ceil((values[key][2] / values[key][3]) * 10) / 10
-#             maxX = math.ceil(values[key][1] * 10) / 10
-#             output_file.write(f"{key}={minX}/{meanX}/{maxX}\n")
-
-# if __name__ == "__main__":
-#     main()
-    
-    
-    
-import math
+import multiprocessing as mp
+import os
 from collections import defaultdict
+from itertools import islice
 
-def process_file(input_file_name="testcase.txt", output_file_name="output.txt"):
-    values = defaultdict(lambda: [float('inf'), float('-inf'), 0, 0])
+def process_chunk(chunk):
+    
+    city_stats = {}
+    
+    for line in chunk:
+        if not line.strip():
+            continue
+        
+        try:
+            city, temp_str = line.strip().split(';')
+            temp = float(temp_str)
+            
+            if city not in city_stats:
+                
+                city_stats[city] = [temp, temp, 1, temp]
+            else:
+                stats = city_stats[city]
+                stats[0] = min(stats[0], temp)  
+                stats[1] += temp  
+                stats[2] += 1  
+                stats[3] = max(stats[3], temp)  
+        except Exception:
+            
+            continue
+    
+    return dict(city_stats)  
 
-    with open(input_file_name, "r") as input_file:
-        for line in input_file:
-            key, value = line.strip().split(';')  
-            value = float(value) 
+def merge_results(results):
+    
+    merged = {}
+    
+    for city_stats in results:
+        for city, stats in city_stats.items():
+            if city not in merged:
+                
+                merged[city] = stats.copy()
+            else:
+                merged_stats = merged[city]
+                merged_stats[0] = min(merged_stats[0], stats[0])  
+                merged_stats[1] += stats[1]  
+                merged_stats[2] += stats[2]  
+                merged_stats[3] = max(merged_stats[3], stats[3])  
+    
+    return merged
 
-            values[key][0] = min(values[key][0], value) 
-            values[key][1] = max(values[key][1], value) 
-            values[key][2] += value                     
-            values[key][3] += 1                         
+def read_and_process_file(input_file, num_processes):
+    
+    with mp.Manager() as manager:
+        
+        file_size = os.path.getsize(input_file)
+        
+        
+        if file_size < 10_000_000:  
+            with open(input_file, 'r') as f:
+                lines = f.readlines()
+            return process_chunk(lines)
+        
+        
+        chunk_size = max(100_000, min(1_000_000, file_size // (num_processes * 4)))
+        
+        
+        all_results = []
+        with mp.Pool(processes=num_processes) as pool:
+            with open(input_file, 'r') as f:
+                while True:
+                    chunk = list(islice(f, chunk_size))
+                    if not chunk:
+                        break
+                    
+                    
+                    result = pool.apply_async(process_chunk, args=(chunk,))
+                    all_results.append(result)
+            
+            
+            results = [result.get() for result in all_results]
+        
+        
+        return merge_results(results)
 
-    with open(output_file_name, "w") as output_file:
-        for key in sorted(values.keys()):
-            minX = math.ceil(values[key][0] * 10) / 10
-            meanX = math.ceil((values[key][2] / values[key][3]) * 10) / 10 if values[key][3] > 0 else 0
-            maxX = math.ceil(values[key][1] * 10) / 10 
-            output_file.write(f"{key}={minX}/{meanX}/{maxX}\n")
+def write_results(stats, output_file):
+    
+    results = []
+    
+    for city, (min_temp, temp_sum, count, max_temp) in stats.items():
+        mean_temp = temp_sum / count
+        
+        results.append(f"{city}={min_temp:.1f}/{mean_temp:.1f}/{max_temp:.1f}")
+    
+    
+    results.sort()
+    
+    
+    with open(output_file, 'w') as f:
+        f.write('\n'.join(results))
+
+def main():
+    input_file = 'testcase.txt'
+    output_file = 'output.txt'
+    
+    
+    num_cpu = max(1, mp.cpu_count() - 1)
+    
+    
+    stats = read_and_process_file(input_file, num_cpu)
+    
+    
+    write_results(stats, output_file)
 
 if __name__ == "__main__":
-    process_file("testcase.txt", "output.txt")
+    main()
